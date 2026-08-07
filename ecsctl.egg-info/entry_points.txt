@@ -1,0 +1,2 @@
+[console_scripts]
+ecsctl = ecsctl.cli:cli

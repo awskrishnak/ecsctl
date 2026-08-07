@@ -1,0 +1,20 @@
+apiVersion: ecs/v1
+kind: Service
+metadata:
+  name: my-app-service
+  namespace: production
+spec:
+  taskDefinition: my-app
+  desiredCount: 2
+  launchType: FARGATE
+  networkConfiguration:
+    awsvpcConfiguration:
+      subnets:
+        - subnet-0123456789abcdef0
+        - subnet-0fedcba9876543210
+      securityGroups:
+        - sg-0123456789abcdef0
+      assignPublicIp: ENABLED
+  deploymentConfiguration:
+    maximumPercent: 200
+    minimumHealthyPercent: 100

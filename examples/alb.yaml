@@ -1,0 +1,16 @@
+apiVersion: ecs/v1
+kind: LoadBalancer
+metadata:
+  name: api-alb
+  namespace: production
+spec:
+  type: application
+  scheme: internet-facing
+  subnets:
+    - subnet-0123456789abcdef0
+    - subnet-0fedcba9876543210
+  securityGroups:
+    - sg-0123456789abcdef0
+  tags:
+    Environment: production
+    Team: platform

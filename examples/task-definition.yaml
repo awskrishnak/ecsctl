@@ -1,0 +1,26 @@
+apiVersion: ecs/v1
+kind: TaskDefinition
+metadata:
+  name: my-app
+  namespace: production
+spec:
+  family: my-app
+  networkMode: awsvpc
+  requiresCompatibilities:
+    - FARGATE
+  cpu: "256"
+  memory: "512"
+  executionRoleArn: arn:aws:iam::ACCOUNT:role/ecsTaskExecutionRole
+  containerDefinitions:
+    - name: app
+      image: nginx:latest
+      essential: true
+      portMappings:
+        - containerPort: 80
+          protocol: tcp
+      logConfiguration:
+        logDriver: awslogs
+        options:
+          awslogs-group: /ecs/my-app
+          awslogs-region: us-east-1
+          awslogs-stream-prefix: ecs

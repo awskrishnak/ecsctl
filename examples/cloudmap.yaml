@@ -1,0 +1,22 @@
+apiVersion: ecs/v1
+kind: ServiceDiscoveryNamespace
+metadata:
+  name: internal.local
+spec:
+  type: DNS_PRIVATE
+  description: "Internal service discovery namespace"
+  vpcId: vpc-0123456789abcdef0
+---
+apiVersion: ecs/v1
+kind: ServiceDiscoveryService
+metadata:
+  name: api-service
+  namespace: internal.local
+spec:
+  namespaceId: "ns-xxx"
+  dnsConfig:
+    type: A
+    ttl: 60
+    routingPolicy: MULTIVALUE
+  healthCheckCustomConfig:
+    failureThreshold: 1

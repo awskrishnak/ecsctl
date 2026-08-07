@@ -1,0 +1,28 @@
+apiVersion: ecs/v1
+kind: IAMRole
+metadata:
+  name: ecsTaskRole
+  annotations:
+    roleType: task
+spec:
+  assumeRolePolicyDocument:
+    Version: "2012-10-17"
+    Statement:
+      - Effect: Allow
+        Principal:
+          Service: ecs-tasks.amazonaws.com
+        Action: sts:AssumeRole
+  managedPolicyArns:
+    - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+  inlinePolicies:
+    - PolicyName: S3Access
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: "arn:aws:s3:::my-bucket/*"
+  tags:
+    - Key: Purpose
+      Value: ECS-Task

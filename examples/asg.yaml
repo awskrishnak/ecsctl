@@ -1,0 +1,19 @@
+apiVersion: ecs/v1
+kind: AutoScalingGroup
+metadata:
+  name: ecs-cluster-asg
+  namespace: production
+spec:
+  minSize: 2
+  maxSize: 10
+  desiredCapacity: 3
+  launchTemplate:
+    launchTemplateName: ecs-optimized
+    version: "$Latest"
+  vpcZoneIdentifier:
+    - subnet-0123456789abcdef0
+    - subnet-0fedcba9876543210
+  tags:
+    - key: Name
+      value: ecs-node
+      propagateAtLaunch: true
