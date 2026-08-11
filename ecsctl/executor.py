@@ -1,6 +1,7 @@
 import json
 from typing import Dict, Any
 import boto3
+import click
 
 
 class AWSExecutor:
@@ -37,6 +38,3 @@ class AWSExecutor:
             click.echo("\n--- Dry Run Summary ---")
             for log in self.logs:
                 click.echo(json.dumps(log, indent=2, default=str))
-
-
-import click

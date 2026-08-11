@@ -156,6 +156,21 @@ FETCHERS = {
 }
 
 
+
+# Map normalized kind → canonical PascalCase key used in READONLY_STRIPPERS
+_KIND_CANONICAL = {
+    "taskdefinition": "TaskDefinition",
+    "service": "Service",
+    "cluster": "Cluster",
+    "loadbalancer": "LoadBalancer",
+    "autoscalinggroup": "AutoScalingGroup",
+    "servicediscoverynamespace": "ServiceDiscoveryNamespace",
+    "servicediscoveryservice": "ServiceDiscoveryService",
+    "certificate": "Certificate",
+    "iamrole": "IAMRole",
+}
+
+
 def fetch_resource(kind: str, name: str, cluster: str = None) -> ECSResource:
     kind_norm = kind.lower().replace("-", "").replace("_", "")
     fetcher = FETCHERS.get(kind_norm)
@@ -167,7 +182,8 @@ def fetch_resource(kind: str, name: str, cluster: str = None) -> ECSResource:
     else:
         raw = fetcher(name)
 
-    clean = strip_readonly(kind, raw)
+    canonical_kind = _KIND_CANONICAL.get(kind_norm, kind)
+    clean = strip_readonly(canonical_kind, raw)
     return ECSResource(
         apiVersion="ecs/v1",
         kind=kind,
