@@ -21,7 +21,7 @@ AWS ECS lacks a native CLI that treats infrastructure as declarative configurati
 ## Installation
 
 ```bash
-git clone https://github.com/10clouds/ecsctl.git
+git clone https://github.com/awskrishnak/ecsctl.git
 cd ecsctl
 pip install -e .
 ```
@@ -123,6 +123,15 @@ ecsctl scale my-api 5 --dry-run
 ecsctl scale my-api 5
 ```
 
+### run
+
+Run a one-off Fargate task.
+
+```bash
+ecsctl run --image nginx:latest --name one-off-task --cluster production --dry-run
+ecsctl run --image nginx:latest --name one-off-task --cluster production
+```
+
 ## Supported Resources
 
 | Kind | AWS Service | Notes |
@@ -160,6 +169,22 @@ User / CI
   ECS    ELBv2   AutoScaling  IAM     ACM
                               │
                          Cloud Map
+```
+
+### Module Layout
+
+```
+ecsctl/
+├── __init__.py          # Version
+├── cli.py               # Click commands: apply, get, describe, edit, delete, scale, run, config
+├── config.py            # Multi-context config manager (~/.ecsctl/config.json)
+├── executor.py          # boto3 wrapper with dry-run logging
+├── applier.py           # Per-kind create-or-update handlers
+├── fetcher.py           # Read live AWS state, strip read-only fields
+├── editor.py            # Fetch → $EDITOR → diff → confirm → apply
+├── output.py            # Table / JSON / YAML formatter
+└── resources/
+    └── base.py          # ECSResource + Metadata dataclasses
 ```
 
 ## Examples
@@ -200,6 +225,66 @@ See [`examples/`](examples/) for complete YAML manifests:
 5. Open a Pull Request
 
 Please include tests for new resource kinds or apply logic.
+
+## Testing
+
+The project has a comprehensive test suite with **169 tests** achieving **94% code coverage**.
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage report
+pytest tests/ --cov=ecsctl --cov-report=term-missing
+
+# Run a specific test file
+pytest tests/test_cli_subcommands.py -v
+```
+
+### Test Dependencies
+
+```bash
+pip install pytest pytest-mock pytest-cov moto
+```
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                  # Shared fixtures (mock clients, sample YAML files)
+├── fixtures/
+│   └── aws_responses.py         # AWS CLI skeleton-based response fixtures
+├── test_resources_base.py       # ECSResource model parsing & serialization (16 tests)
+├── test_config.py               # ConfigManager context management (12 tests)
+├── test_executor.py             # AWSExecutor dry-run & call routing (8 tests)
+├── test_applier.py              # All 9 apply handlers create/update logic (30 tests)
+├── test_fetcher.py              # All 9 fetch functions & readonly stripping (25 tests)
+├── test_editor.py               # Diff calculation (5 tests)
+├── test_output.py               # Table/JSON/YAML formatting (12 tests)
+├── test_cli.py                  # Basic CLI integration (14 tests)
+└── test_cli_subcommands.py      # Full subcommand validation (47 tests)
+```
+
+### What's Tested
+
+Every CLI subcommand is validated end-to-end with mocked boto3 calls:
+
+| Subcommand | Validated |
+|------------|-----------|
+| `apply` | All 10 resource kinds (create + update paths), dry-run, cluster-required error |
+| `get` | All 9 resource type listings, single resource fetch, JSON/YAML/table output, empty lists |
+| `describe` | YAML/JSON/table output, not-found error |
+| `delete` | All resource kinds, dry-run |
+| `scale` | Execute, dry-run, invalid input |
+| `run` | Execute (register + run_task), dry-run |
+| `edit` | No-changes, abort, apply with dry-run |
+| `config set` | Full params, persistence verification |
+| `config context` | Switch, nonexistent error |
+| `config show` | Current context, show-all |
+
+All AWS API call shapes are validated against `aws <service> <action> --generate-cli-skeleton` output to ensure parameter names, types, and structures match the real AWS APIs.
 
 ## License
 
