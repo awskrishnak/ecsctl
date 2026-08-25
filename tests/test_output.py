@@ -64,7 +64,7 @@ class TestOutputFormatterTable:
         assert "svc-1" in captured.out
         assert "svc-2" in captured.out
         assert "ACTIVE" in captured.out
-        assert "name" in captured.out  # header
+        assert "NAME" in captured.out  # header
 
     def test_prints_table_from_dict(self, capsys):
         f = OutputFormatter("table")

@@ -138,7 +138,7 @@ class TestFetchTaskDefinition:
             mock_ecs.describe_task_definition.return_value = DESCRIBE_TASK_DEFINITION_RESPONSE
 
             result = fetch_task_definition("my-app:1")
-            mock_ecs.describe_task_definition.assert_called_once_with(taskDefinition="my-app:1")
+            mock_ecs.describe_task_definition.assert_called_once_with(taskDefinition="my-app:1", include=["TAGS"])
             assert result["family"] == "my-app"
 
 

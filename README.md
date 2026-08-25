@@ -1,6 +1,6 @@
 # ecsctl
 
-A kubectl-style CLI for managing AWS ECS clusters entirely from the command line. Manage services, task definitions, load balancers, auto scaling groups, ECR repositories, secrets, SSM parameters, certificates, IAM roles, and more using declarative YAML manifests.
+A kubectl-style CLI for managing AWS ECS clusters entirely from the command line. Manage services, task definitions, container instances (nodes), load balancers, auto scaling groups, ECR repositories, secrets, SSM parameters, certificates, IAM roles, and more using declarative YAML manifests.
 
 ## Why ecsctl
 
@@ -49,6 +49,7 @@ ecsctl config context prod
 ```bash
 ecsctl get svc
 ecsctl get td
+ecsctl get node
 ecsctl get asg
 ecsctl get ecr
 ```
@@ -102,6 +103,7 @@ ecsctl apply -f service.yaml
 | `task` | — | ECS |
 | `taskdefinition` | `td` | ECS |
 | `cluster` | — | ECS |
+| `node` | `ci`, `instance` | ECS (Container Instances) |
 | `capacityprovider` | `cp` | ECS |
 | `loadbalancer` | `lb`, `alb` | ELBv2 |
 | `targetgroup` | `tg` | ELBv2 |
@@ -114,7 +116,7 @@ ecsctl apply -f service.yaml
 | `servicediscoverynamespace` | `ns` | Cloud Map |
 | `servicediscoveryservice` | `sdsvc` | Cloud Map |
 
-Plurals also work: `ecsctl get services`, `ecsctl get ecrrepositories`, etc.
+Plurals also work: `ecsctl get services`, `ecsctl get nodes`, `ecsctl get ecrrepositories`, etc.
 
 ## Configuration
 
@@ -143,6 +145,8 @@ Environment variables override active context:
 
 ```bash
 ecsctl get svc                          # list services (table)
+ecsctl get td                           # list task definitions with details
+ecsctl get node                         # list container instances (nodes)
 ecsctl get td -o json                   # list task definitions (JSON)
 ecsctl describe service my-api -o yaml  # full YAML spec
 ecsctl get svc -w                       # watch mode (poll every 2s)
@@ -151,11 +155,12 @@ ecsctl get svc -w                       # watch mode (poll every 2s)
 ### Deploying and Managing
 
 ```bash
-ecsctl deploy my-api --image repo:v2.0 --wait   # deploy new image, wait for stable
-ecsctl rollback my-api                           # revert to previous task def revision
-ecsctl rollback my-api --revision 3              # revert to specific revision
-ecsctl restart my-api                            # force rolling restart
-ecsctl scale my-api 5                            # scale to 5 tasks
+ecsctl deploy my-api --image repo:v2.0 --wait              # deploy new image, wait for stable
+ecsctl deploy my-api --task-definition my-app:5 --wait     # deploy specific TD revision
+ecsctl rollback my-api                                      # revert to previous task def revision
+ecsctl rollback my-api --revision 3                         # revert to specific revision
+ecsctl restart my-api                                       # force rolling restart
+ecsctl scale my-api 5                                       # scale to 5 tasks
 ```
 
 ### Debugging
@@ -229,7 +234,8 @@ ecsctl/
 ├── executor.py          # Lazy boto3 client wrapper with dry-run logging
 ├── applier.py           # Per-kind create-or-update handlers (14 types)
 ├── fetcher.py           # Read live AWS state, strip read-only fields
-├── lister.py            # Registry-based resource listing (14 types)
+├── summary.py           # Concise summary views for get <type> <name>
+├── lister.py            # Registry-based resource listing (15 types)
 ├── editor.py            # Fetch -> $EDITOR -> diff -> confirm -> apply
 ├── diff.py              # Shared diff calculation and colored output
 ├── output.py            # Table / JSON / YAML formatter
@@ -284,7 +290,7 @@ See [`examples/`](examples/) for complete YAML manifests:
 
 ## Testing
 
-**169 tests, 94% coverage.**
+**169 tests, ~94% coverage.**
 
 ```bash
 # Run all tests

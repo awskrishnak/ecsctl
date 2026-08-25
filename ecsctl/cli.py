@@ -33,7 +33,7 @@ def cluster_option(f):
 EPILOG = """\b
 Resource Types (with short aliases):
   cluster        service (svc)     task             taskdefinition (td)
-  loadbalancer (lb/alb)            targetgroup (tg)
+  node (ci)      loadbalancer (lb/alb)              targetgroup (tg)
   autoscalinggroup (asg)           capacityprovider (cp)
   ecrrepository (ecr/repo)         secret (sec)
   ssmparameter (ssm/param)         certificate (cert)
@@ -43,6 +43,7 @@ Resource Types (with short aliases):
 Examples:
   ecsctl get svc
   ecsctl get td
+  ecsctl get node
   ecsctl describe asg my-asg -o yaml
   ecsctl logs my-service --follow
   ecsctl deploy my-service --image repo:v2
@@ -108,7 +109,12 @@ def get(ctx, cluster, output, watch, resource_type, name):
             if output in ("yaml", "json"):
                 formatter.print(resource.to_dict())
             else:
-                formatter.print(resource.spec)
+                from ecsctl.summary import get_summary
+                summary = get_summary(resource_type, resource.spec, name, cluster, config.get_session())
+                if summary:
+                    formatter.print(summary)
+                else:
+                    formatter.print(resource.spec)
         except Exception as e:
             click.echo(f"Error: {e}")
     elif watch:
@@ -142,7 +148,13 @@ def describe(ctx, cluster, output, resource_type, name):
         if output in ("yaml", "json"):
             formatter.print(resource.to_dict())
         else:
-            formatter.print(resource.spec)
+            from ecsctl.output import print_describe
+            click.echo(f"Name:\t\t{resource.metadata.name}")
+            click.echo(f"Kind:\t\t{resource.kind}")
+            if resource.metadata.namespace:
+                click.echo(f"Namespace:\t{resource.metadata.namespace}")
+            click.echo("")
+            print_describe(resource.spec)
     except Exception as e:
         click.echo(f"Error: {e}")
 

@@ -2,7 +2,7 @@ KNOWN_TYPES = {
     "cluster", "service", "task", "taskdefinition", "loadbalancer",
     "targetgroup", "autoscalinggroup", "capacityprovider", "ecrrepository",
     "secret", "ssmparameter", "servicediscoverynamespace",
-    "servicediscoveryservice", "certificate", "iamrole",
+    "servicediscoveryservice", "certificate", "iamrole", "node",
 }
 
 ALIASES = {
@@ -24,6 +24,9 @@ ALIASES = {
     "sdsvc": "servicediscoveryservice",
     "cert": "certificate",
     "role": "iamrole",
+    "ci": "node",
+    "containerinstance": "node",
+    "instance": "node",
 }
 
 

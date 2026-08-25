@@ -57,6 +57,9 @@ READONLY_STRIPPERS = {
     "CapacityProvider": [
         "capacityProviderArn", "status", "updateStatus", "updateStatusReason",
     ],
+    "Node": [
+        "containerInstanceArn", "versionInfo", "attachments",
+    ],
 }
 
 
@@ -68,8 +71,12 @@ def strip_readonly(kind: str, data: dict) -> dict:
 def fetch_task_definition(name: str, session=None) -> dict:
     session = session or boto3.Session()
     ecs = session.client("ecs")
-    resp = ecs.describe_task_definition(taskDefinition=name)
-    return resp.get("taskDefinition", {})
+    resp = ecs.describe_task_definition(taskDefinition=name, include=["TAGS"])
+    td = resp.get("taskDefinition", {})
+    tags = resp.get("tags", [])
+    if tags:
+        td["tags"] = tags
+    return td
 
 
 def fetch_service(cluster: str, name: str, session=None) -> dict:
@@ -211,10 +218,21 @@ def fetch_capacity_provider(name: str, session=None) -> dict:
     return providers[0]
 
 
+def fetch_node(cluster: str, name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecs = session.client("ecs")
+    resp = ecs.describe_container_instances(cluster=cluster, containerInstances=[name])
+    instances = resp.get("containerInstances", [])
+    if not instances:
+        raise ValueError(f"Container instance {name} not found in cluster {cluster}")
+    return instances[0]
+
+
 FETCHERS = {
     "taskdefinition": fetch_task_definition,
     "service": fetch_service,
     "cluster": fetch_cluster,
+    "node": fetch_node,
     "loadbalancer": fetch_alb,
     "autoscalinggroup": fetch_asg,
     "servicediscoverynamespace": fetch_sd_namespace,
@@ -233,6 +251,7 @@ _KIND_CANONICAL = {
     "taskdefinition": "TaskDefinition",
     "service": "Service",
     "cluster": "Cluster",
+    "node": "Node",
     "loadbalancer": "LoadBalancer",
     "autoscalinggroup": "AutoScalingGroup",
     "servicediscoverynamespace": "ServiceDiscoveryNamespace",
@@ -254,7 +273,7 @@ def fetch_resource(kind: str, name: str, cluster: str = None, session=None) -> E
     if not fetcher:
         raise ValueError(f"Unknown resource kind: {kind}")
 
-    if kind_norm == "service":
+    if kind_norm in ("service", "node"):
         raw = fetcher(cluster, name, session=session)
     else:
         raw = fetcher(name, session=session)
