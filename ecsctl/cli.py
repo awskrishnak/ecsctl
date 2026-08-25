@@ -10,6 +10,9 @@ from ecsctl.editor import edit_resource
 from ecsctl.output import OutputFormatter
 
 
+from ecsctl.types import normalize_resource_type
+
+
 def output_option(f):
     return click.option(
         "-o", "--output",
@@ -27,10 +30,33 @@ def cluster_option(f):
     )(f)
 
 
-@click.group()
-@click.version_option(version=__version__)
+EPILOG = """\b
+Resource Types (with short aliases):
+  cluster        service (svc)     task             taskdefinition (td)
+  loadbalancer (lb/alb)            targetgroup (tg)
+  autoscalinggroup (asg)           capacityprovider (cp)
+  ecrrepository (ecr/repo)         secret (sec)
+  ssmparameter (ssm/param)         certificate (cert)
+  servicediscoverynamespace (ns)   iamrole (role)
+
+\b
+Examples:
+  ecsctl get svc
+  ecsctl get td
+  ecsctl describe asg my-asg -o yaml
+  ecsctl logs my-service --follow
+  ecsctl deploy my-service --image repo:v2
+  ecsctl rollback my-service
+  ecsctl apply -f service.yaml --dry-run
+  ecsctl config set prod --cluster-name my-cluster --aws-profile prod
+"""
+
+
+@click.group(epilog=EPILOG)
+@click.version_option(version=__version__, prog_name="ecsctl")
 @click.pass_context
 def cli(ctx):
+    """kubectl-style CLI for managing AWS ECS clusters and infrastructure."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = ConfigManager()
 
@@ -41,8 +67,10 @@ def cli(ctx):
 @click.option("-f", "--filename", multiple=True, required=True, help="YAML files to apply")
 @click.pass_context
 def apply(ctx, cluster, dry_run, filename):
-    """Apply ECS / AWS resources from YAML files."""
-    executor = AWSExecutor(dry_run=dry_run)
+    """Create or update resources from YAML manifests."""
+    config = ctx.obj["config"]
+    cluster = cluster or config.get_cluster()
+    executor = AWSExecutor(dry_run=dry_run, session=config.get_session())
     for f in filename:
         if not os.path.exists(f):
             click.echo(f"File not found: {f}")
@@ -63,144 +91,38 @@ def apply(ctx, cluster, dry_run, filename):
 @cli.command()
 @cluster_option
 @output_option
+@click.option("-w", "--watch", is_flag=True, help="Watch for changes (poll every 2s)")
 @click.argument("resource_type")
 @click.argument("name", required=False)
 @click.pass_context
-def get(ctx, cluster, output, resource_type, name):
-    """Get ECS / AWS resources."""
+def get(ctx, cluster, output, watch, resource_type, name):
+    """List resources or get a specific resource by name."""
+    cluster = cluster or ctx.obj["config"].get_cluster()
     formatter = OutputFormatter(output)
-    resource_type = resource_type.lower().replace("-", "").replace("_", "")
+    resource_type = normalize_resource_type(resource_type)
 
+    config = ctx.obj["config"]
     if name:
         try:
-            resource = fetch_resource(resource_type, name, cluster)
+            resource = fetch_resource(resource_type, name, cluster, session=config.get_session())
             if output in ("yaml", "json"):
                 formatter.print(resource.to_dict())
             else:
                 formatter.print(resource.spec)
         except Exception as e:
             click.echo(f"Error: {e}")
+    elif watch:
+        from ecsctl.watcher import watch_loop
+        watch_loop(lambda: _list_resources(resource_type, cluster, formatter, session=config.get_session()))
     else:
-        _list_resources(resource_type, cluster, formatter)
+        _list_resources(resource_type, cluster, formatter, session=config.get_session())
 
 
-def _list_resources(resource_type, cluster, formatter):
+def _list_resources(resource_type, cluster, formatter, session=None):
+    from ecsctl.lister import list_resources
     import boto3
-
-    if resource_type == "cluster":
-        ecs = boto3.client("ecs")
-        resp = ecs.list_clusters()
-        arns = resp.get("clusterArns", [])
-        if not arns:
-            click.echo("No clusters found")
-            return
-        details = ecs.describe_clusters(clusters=arns).get("clusters", [])
-        data = [{
-            "name": c["clusterName"],
-            "status": c["status"],
-            "running": c.get("runningTasksCount", 0),
-            "pending": c.get("pendingTasksCount", 0),
-        } for c in details]
-        formatter.print(data)
-
-    elif resource_type == "service":
-        if not cluster:
-            click.echo("Cluster required. Use --cluster or set AWS_ECS_CLUSTER_NAME")
-            return
-        ecs = boto3.client("ecs")
-        resp = ecs.list_services(cluster=cluster)
-        arns = resp.get("serviceArns", [])
-        if not arns:
-            click.echo("No services found")
-            return
-        data = []
-        for i in range(0, len(arns), 10):
-            batch = arns[i:i + 10]
-            details = ecs.describe_services(cluster=cluster, services=batch).get("services", [])
-            for s in details:
-                data.append({
-                    "name": s["serviceName"],
-                    "taskDefinition": s.get("taskDefinition", "").split("/")[-1],
-                    "desired": s.get("desiredCount", 0),
-                    "running": s.get("runningCount", 0),
-                    "pending": s.get("pendingCount", 0),
-                    "status": s.get("status", ""),
-                })
-        formatter.print(data)
-
-    elif resource_type == "taskdefinition":
-        ecs = boto3.client("ecs")
-        resp = ecs.list_task_definition_families()
-        families = resp.get("families", [])
-        data = [{"family": f} for f in families]
-        formatter.print(data)
-
-    elif resource_type == "task":
-        if not cluster:
-            click.echo("Cluster required")
-            return
-        ecs = boto3.client("ecs")
-        resp = ecs.list_tasks(cluster=cluster)
-        arns = resp.get("taskArns", [])
-        if not arns:
-            click.echo("No tasks found")
-            return
-        details = ecs.describe_tasks(cluster=cluster, tasks=arns).get("tasks", [])
-        data = [{
-            "taskId": t["taskArn"].split("/")[-1],
-            "status": t["lastStatus"],
-            "definition": t["taskDefinitionArn"].split("/")[-1],
-            "startedAt": str(t.get("startedAt", "N/A")),
-        } for t in details]
-        formatter.print(data)
-
-    elif resource_type == "loadbalancer":
-        elbv2 = boto3.client("elbv2")
-        resp = elbv2.describe_load_balancers().get("LoadBalancers", [])
-        data = [{
-            "name": lb["LoadBalancerName"],
-            "type": lb["Type"],
-            "scheme": lb["Scheme"],
-            "state": lb.get("State", {}).get("Code", "unknown"),
-        } for lb in resp]
-        formatter.print(data)
-
-    elif resource_type == "autoscalinggroup":
-        autoscaling = boto3.client("autoscaling")
-        resp = autoscaling.describe_auto_scaling_groups().get("AutoScalingGroups", [])
-        data = [{
-            "name": g["AutoScalingGroupName"],
-            "min": g["MinSize"],
-            "max": g["MaxSize"],
-            "desired": g["DesiredCapacity"],
-            "instances": len(g.get("Instances", [])),
-        } for g in resp]
-        formatter.print(data)
-
-    elif resource_type == "servicediscoverynamespace":
-        sd = boto3.client("servicediscovery")
-        resp = sd.list_namespaces().get("Namespaces", [])
-        data = [{"name": n["Name"], "type": n["Type"], "id": n["Id"]} for n in resp]
-        formatter.print(data)
-
-    elif resource_type == "certificate":
-        acm = boto3.client("acm")
-        resp = acm.list_certificates().get("CertificateSummaryList", [])
-        data = [{"domain": c["DomainName"], "arn": c["CertificateArn"]} for c in resp]
-        formatter.print(data)
-
-    elif resource_type == "iamrole":
-        iam = boto3.client("iam")
-        resp = iam.list_roles().get("Roles", [])
-        data = [{
-            "name": r["RoleName"],
-            "arn": r["Arn"],
-            "createDate": str(r["CreateDate"]),
-        } for r in resp]
-        formatter.print(data)
-
-    else:
-        click.echo(f"Listing not yet implemented for {resource_type}")
+    session = session or boto3.Session()
+    list_resources(resource_type, cluster, formatter, session)
 
 
 @cli.command()
@@ -210,10 +132,13 @@ def _list_resources(resource_type, cluster, formatter):
 @click.argument("name")
 @click.pass_context
 def describe(ctx, cluster, output, resource_type, name):
-    """Describe a specific resource in detail."""
+    """Show detailed info for a named resource."""
+    config = ctx.obj["config"]
+    cluster = cluster or config.get_cluster()
+    resource_type = normalize_resource_type(resource_type)
     formatter = OutputFormatter(output)
     try:
-        resource = fetch_resource(resource_type, name, cluster)
+        resource = fetch_resource(resource_type, name, cluster, session=config.get_session())
         if output in ("yaml", "json"):
             formatter.print(resource.to_dict())
         else:
@@ -230,10 +155,11 @@ def describe(ctx, cluster, output, resource_type, name):
 @click.argument("name")
 @click.pass_context
 def edit(ctx, cluster, dry_run, editor, resource_type, name):
-    """Edit a resource in your default editor with diff preview."""
-    target = resource_type.lower().replace("-", "").replace("_", "")
-    target_cluster = cluster or ctx.obj["config"].get_cluster()
-    edit_resource(target, name, target_cluster, editor, dry_run)
+    """Edit a live resource in $EDITOR, preview diff, then apply."""
+    config = ctx.obj["config"]
+    target = normalize_resource_type(resource_type)
+    target_cluster = cluster or config.get_cluster()
+    edit_resource(target, name, target_cluster, editor, dry_run, session=config.get_session())
 
 
 @cli.command()
@@ -242,8 +168,10 @@ def edit(ctx, cluster, dry_run, editor, resource_type, name):
 @click.option("-f", "--filename", multiple=True, required=True)
 @click.pass_context
 def delete(ctx, cluster, dry_run, filename):
-    """Delete resources defined in YAML files."""
-    executor = AWSExecutor(dry_run=dry_run)
+    """Delete resources defined in YAML manifests."""
+    config = ctx.obj["config"]
+    cluster = cluster or config.get_cluster()
+    executor = AWSExecutor(dry_run=dry_run, session=config.get_session())
     for f in filename:
         resource = ECSResource.from_yaml(f)
         kind = resource.kind.lower().replace("-", "").replace("_", "")
@@ -268,32 +196,53 @@ def delete(ctx, cluster, dry_run, filename):
                 "ForceDelete": True,
             })
         elif kind == "loadbalancer":
-            elbv2 = executor.clients["elbv2"]
+            elbv2 = executor.client("elbv2")
             lbs = elbv2.describe_load_balancers(Names=[name]).get("LoadBalancers", [])
             if lbs:
                 executor.call("elbv2", "delete_load_balancer", {
                     "LoadBalancerArn": lbs[0]["LoadBalancerArn"],
                 })
         elif kind == "servicediscoverynamespace":
-            sd = executor.clients["servicediscovery"]
+            sd = executor.client("servicediscovery")
             ns = sd.list_namespaces().get("Namespaces", [])
             for n in ns:
                 if n["Name"] == name:
                     executor.call("servicediscovery", "delete_namespace", {"Id": n["Id"]})
         elif kind == "servicediscoveryservice":
-            sd = executor.clients["servicediscovery"]
+            sd = executor.client("servicediscovery")
             svcs = sd.list_services().get("Services", [])
             for s in svcs:
                 if s["Name"] == name:
                     executor.call("servicediscovery", "delete_service", {"Id": s["Id"]})
         elif kind == "certificate":
-            acm = executor.clients["acm"]
+            acm = executor.client("acm")
             certs = acm.list_certificates().get("CertificateSummaryList", [])
             for c in certs:
                 if c["DomainName"] == name:
                     executor.call("acm", "delete_certificate", {"CertificateArn": c["CertificateArn"]})
         elif kind == "iamrole":
             executor.call("iam", "delete_role", {"RoleName": name})
+        elif kind == "targetgroup":
+            elbv2 = executor.client("elbv2")
+            tgs = elbv2.describe_target_groups(Names=[name]).get("TargetGroups", [])
+            if tgs:
+                executor.call("elbv2", "delete_target_group", {
+                    "TargetGroupArn": tgs[0]["TargetGroupArn"],
+                })
+        elif kind == "ecrrepository":
+            executor.call("ecr", "delete_repository", {
+                "repositoryName": name, "force": True,
+            })
+        elif kind == "secret":
+            executor.call("secretsmanager", "delete_secret", {
+                "SecretId": name, "ForceDeleteWithoutRecovery": True,
+            })
+        elif kind == "ssmparameter":
+            executor.call("ssm", "delete_parameter", {"Name": name})
+        elif kind == "capacityprovider":
+            executor.call("ecs", "delete_capacity_provider", {
+                "capacityProvider": name,
+            })
         else:
             click.echo(f"Delete not implemented for {kind}")
 
@@ -347,9 +296,10 @@ def config_context(name):
 @click.option("--dry-run", is_flag=True)
 @click.pass_context
 def scale(ctx, cluster, service_name, count, dry_run):
-    """Scale a service desired count."""
-    target = cluster or ctx.obj["config"].get_cluster()
-    executor = AWSExecutor(dry_run=dry_run)
+    """Scale a service to a desired task count."""
+    config = ctx.obj["config"]
+    target = cluster or config.get_cluster()
+    executor = AWSExecutor(dry_run=dry_run, session=config.get_session())
     result = executor.call("ecs", "update_service", {
         "cluster": target,
         "service": service_name,
@@ -365,9 +315,10 @@ def scale(ctx, cluster, service_name, count, dry_run):
 @click.option("--dry-run", is_flag=True)
 @click.pass_context
 def run(ctx, cluster, image, name, dry_run):
-    """Run a one-off task (simplified)."""
-    target = cluster or ctx.obj["config"].get_cluster()
-    executor = AWSExecutor(dry_run=dry_run)
+    """Run a one-off Fargate task from an image."""
+    config = ctx.obj["config"]
+    target = cluster or config.get_cluster()
+    executor = AWSExecutor(dry_run=dry_run, session=config.get_session())
     td = executor.call("ecs", "register_task_definition", {
         "family": name,
         "containerDefinitions": [{
@@ -386,6 +337,27 @@ def run(ctx, cluster, image, name, dry_run):
         click.echo(result)
     else:
         executor.flush_logs()
+
+
+from ecsctl.commands.logs import logs
+from ecsctl.commands.exec import exec_cmd
+from ecsctl.commands.events import events
+from ecsctl.commands.top import top
+from ecsctl.commands.rollback import rollback
+from ecsctl.commands.restart import restart
+from ecsctl.commands.deploy import deploy
+from ecsctl.commands.wait import wait_cmd
+from ecsctl.commands.diff import diff_cmd
+
+cli.add_command(logs)
+cli.add_command(exec_cmd, name="exec")
+cli.add_command(events)
+cli.add_command(top)
+cli.add_command(rollback)
+cli.add_command(restart)
+cli.add_command(deploy)
+cli.add_command(wait_cmd, name="wait")
+cli.add_command(diff_cmd, name="diff")
 
 
 if __name__ == "__main__":

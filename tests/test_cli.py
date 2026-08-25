@@ -31,7 +31,7 @@ class TestVersion:
     def test_version_option(self, runner):
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "2.0.0" in result.output
+        assert "2.1.0" in result.output
 
 
 class TestApplyCommand:

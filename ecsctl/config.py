@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+import boto3
 
 
 class ConfigManager:
@@ -11,6 +12,7 @@ class ConfigManager:
         self.contexts = {}
         self.current = "default"
         self._load()
+        self._session = None
 
     def _load(self):
         if self.config_file.exists():
@@ -38,3 +40,16 @@ class ConfigManager:
 
     def get_cluster(self):
         return self.get_current().get("cluster_name") or os.getenv("AWS_ECS_CLUSTER_NAME")
+
+    def get_session(self):
+        if self._session is None:
+            ctx = self.get_current()
+            kwargs = {}
+            profile = ctx.get("aws_profile")
+            region = ctx.get("aws_region")
+            if profile:
+                kwargs["profile_name"] = profile
+            if region:
+                kwargs["region_name"] = region
+            self._session = boto3.Session(**kwargs)
+        return self._session

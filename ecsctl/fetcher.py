@@ -40,6 +40,23 @@ READONLY_STRIPPERS = {
     "IAMRole": [
         "Arn", "RoleId", "CreateDate", "RoleLastUsed", "MaxSessionDuration",
     ],
+    "TargetGroup": [
+        "TargetGroupArn", "LoadBalancerArns", "HealthCheckPort",
+    ],
+    "ECRRepository": [
+        "repositoryArn", "registryId", "repositoryUri", "createdAt",
+    ],
+    "Secret": [
+        "ARN", "RotationEnabled", "RotationRules", "LastRotatedDate",
+        "LastChangedDate", "LastAccessedDate", "DeletedDate", "CreatedDate",
+        "VersionIdsToStages", "OwningService", "ReplicationStatus",
+    ],
+    "SSMParameter": [
+        "ARN", "LastModifiedDate", "Version", "DataType",
+    ],
+    "CapacityProvider": [
+        "capacityProviderArn", "status", "updateStatus", "updateStatusReason",
+    ],
 }
 
 
@@ -48,14 +65,16 @@ def strip_readonly(kind: str, data: dict) -> dict:
     return {k: v for k, v in data.items() if k not in strippers}
 
 
-def fetch_task_definition(name: str) -> dict:
-    ecs = boto3.client("ecs")
+def fetch_task_definition(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecs = session.client("ecs")
     resp = ecs.describe_task_definition(taskDefinition=name)
     return resp.get("taskDefinition", {})
 
 
-def fetch_service(cluster: str, name: str) -> dict:
-    ecs = boto3.client("ecs")
+def fetch_service(cluster: str, name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecs = session.client("ecs")
     resp = ecs.describe_services(cluster=cluster, services=[name])
     services = resp.get("services", [])
     if not services:
@@ -63,8 +82,9 @@ def fetch_service(cluster: str, name: str) -> dict:
     return services[0]
 
 
-def fetch_cluster(name: str) -> dict:
-    ecs = boto3.client("ecs")
+def fetch_cluster(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecs = session.client("ecs")
     resp = ecs.describe_clusters(clusters=[name])
     clusters = resp.get("clusters", [])
     if not clusters:
@@ -72,21 +92,22 @@ def fetch_cluster(name: str) -> dict:
     return clusters[0]
 
 
-def fetch_alb(name: str) -> dict:
-    elbv2 = boto3.client("elbv2")
+def fetch_alb(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    elbv2 = session.client("elbv2")
     resp = elbv2.describe_load_balancers(Names=[name])
     lbs = resp.get("LoadBalancers", [])
     if not lbs:
         raise ValueError(f"LoadBalancer {name} not found")
     lb = lbs[0]
-    # Enrich with listeners
     listeners = elbv2.describe_listeners(LoadBalancerArn=lb["LoadBalancerArn"]).get("Listeners", [])
     lb["Listeners"] = listeners
     return lb
 
 
-def fetch_asg(name: str) -> dict:
-    autoscaling = boto3.client("autoscaling")
+def fetch_asg(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    autoscaling = session.client("autoscaling")
     resp = autoscaling.describe_auto_scaling_groups(AutoScalingGroupNames=[name])
     groups = resp.get("AutoScalingGroups", [])
     if not groups:
@@ -94,8 +115,9 @@ def fetch_asg(name: str) -> dict:
     return groups[0]
 
 
-def fetch_sd_namespace(name: str) -> dict:
-    sd = boto3.client("servicediscovery")
+def fetch_sd_namespace(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    sd = session.client("servicediscovery")
     resp = sd.list_namespaces()
     for ns in resp.get("Namespaces", []):
         if ns["Name"] == name:
@@ -103,8 +125,9 @@ def fetch_sd_namespace(name: str) -> dict:
     raise ValueError(f"Namespace {name} not found")
 
 
-def fetch_sd_service(name: str) -> dict:
-    sd = boto3.client("servicediscovery")
+def fetch_sd_service(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    sd = session.client("servicediscovery")
     resp = sd.list_services()
     for svc in resp.get("Services", []):
         if svc["Name"] == name:
@@ -112,8 +135,9 @@ def fetch_sd_service(name: str) -> dict:
     raise ValueError(f"ServiceDiscoveryService {name} not found")
 
 
-def fetch_certificate(name: str) -> dict:
-    acm = boto3.client("acm")
+def fetch_certificate(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    acm = session.client("acm")
     if name.startswith("arn:"):
         resp = acm.describe_certificate(CertificateArn=name)
         return resp.get("Certificate", {})
@@ -125,11 +149,11 @@ def fetch_certificate(name: str) -> dict:
     raise ValueError(f"Certificate {name} not found")
 
 
-def fetch_iam_role(name: str) -> dict:
-    iam = boto3.client("iam")
+def fetch_iam_role(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    iam = session.client("iam")
     resp = iam.get_role(RoleName=name)
     role = resp.get("Role", {})
-    # Enrich with policy info
     attached = iam.list_attached_role_policies(RoleName=name).get("AttachedPolicies", [])
     role["AttachedPolicies"] = attached
     inline_names = iam.list_role_policies(RoleName=name).get("PolicyNames", [])
@@ -143,6 +167,50 @@ def fetch_iam_role(name: str) -> dict:
     return role
 
 
+def fetch_target_group(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    elbv2 = session.client("elbv2")
+    resp = elbv2.describe_target_groups(Names=[name])
+    tgs = resp.get("TargetGroups", [])
+    if not tgs:
+        raise ValueError(f"TargetGroup {name} not found")
+    return tgs[0]
+
+
+def fetch_ecr_repository(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecr = session.client("ecr")
+    resp = ecr.describe_repositories(repositoryNames=[name])
+    repos = resp.get("repositories", [])
+    if not repos:
+        raise ValueError(f"ECR Repository {name} not found")
+    return repos[0]
+
+
+def fetch_secret(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    sm = session.client("secretsmanager")
+    resp = sm.describe_secret(SecretId=name)
+    return resp
+
+
+def fetch_ssm_parameter(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ssm = session.client("ssm")
+    resp = ssm.get_parameter(Name=name, WithDecryption=False)
+    return resp.get("Parameter", {})
+
+
+def fetch_capacity_provider(name: str, session=None) -> dict:
+    session = session or boto3.Session()
+    ecs = session.client("ecs")
+    resp = ecs.describe_capacity_providers(capacityProviders=[name])
+    providers = resp.get("capacityProviders", [])
+    if not providers:
+        raise ValueError(f"CapacityProvider {name} not found")
+    return providers[0]
+
+
 FETCHERS = {
     "taskdefinition": fetch_task_definition,
     "service": fetch_service,
@@ -153,11 +221,14 @@ FETCHERS = {
     "servicediscoveryservice": fetch_sd_service,
     "certificate": fetch_certificate,
     "iamrole": fetch_iam_role,
+    "targetgroup": fetch_target_group,
+    "ecrrepository": fetch_ecr_repository,
+    "secret": fetch_secret,
+    "ssmparameter": fetch_ssm_parameter,
+    "capacityprovider": fetch_capacity_provider,
 }
 
 
-
-# Map normalized kind → canonical PascalCase key used in READONLY_STRIPPERS
 _KIND_CANONICAL = {
     "taskdefinition": "TaskDefinition",
     "service": "Service",
@@ -168,19 +239,25 @@ _KIND_CANONICAL = {
     "servicediscoveryservice": "ServiceDiscoveryService",
     "certificate": "Certificate",
     "iamrole": "IAMRole",
+    "targetgroup": "TargetGroup",
+    "ecrrepository": "ECRRepository",
+    "secret": "Secret",
+    "ssmparameter": "SSMParameter",
+    "capacityprovider": "CapacityProvider",
 }
 
 
-def fetch_resource(kind: str, name: str, cluster: str = None) -> ECSResource:
+def fetch_resource(kind: str, name: str, cluster: str = None, session=None) -> ECSResource:
+    session = session or boto3.Session()
     kind_norm = kind.lower().replace("-", "").replace("_", "")
     fetcher = FETCHERS.get(kind_norm)
     if not fetcher:
         raise ValueError(f"Unknown resource kind: {kind}")
 
     if kind_norm == "service":
-        raw = fetcher(cluster, name)
+        raw = fetcher(cluster, name, session=session)
     else:
-        raw = fetcher(name)
+        raw = fetcher(name, session=session)
 
     canonical_kind = _KIND_CANONICAL.get(kind_norm, kind)
     clean = strip_readonly(canonical_kind, raw)

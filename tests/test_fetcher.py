@@ -131,7 +131,8 @@ class TestStripReadonly:
 
 class TestFetchTaskDefinition:
     def test_fetch_returns_raw_data(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_task_definition.return_value = DESCRIBE_TASK_DEFINITION_RESPONSE
@@ -143,7 +144,8 @@ class TestFetchTaskDefinition:
 
 class TestFetchService:
     def test_fetch_returns_service_data(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_services.return_value = DESCRIBE_SERVICES_RESPONSE
@@ -155,7 +157,8 @@ class TestFetchService:
             assert result["serviceName"] == "my-app-service"
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_services.return_value = DESCRIBE_SERVICES_EMPTY
@@ -166,7 +169,8 @@ class TestFetchService:
 
 class TestFetchCluster:
     def test_fetch_returns_cluster_data(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_clusters.return_value = DESCRIBE_CLUSTERS_RESPONSE
@@ -175,7 +179,8 @@ class TestFetchCluster:
             assert result["clusterName"] == "production"
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_clusters.return_value = {"clusters": [], "failures": []}
@@ -186,7 +191,8 @@ class TestFetchCluster:
 
 class TestFetchALB:
     def test_fetch_returns_alb_with_listeners(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_elbv2 = MagicMock()
             mock_client.return_value = mock_elbv2
             mock_elbv2.describe_load_balancers.return_value = DESCRIBE_LOAD_BALANCERS_RESPONSE
@@ -198,7 +204,8 @@ class TestFetchALB:
             assert len(result["Listeners"]) == 1
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_elbv2 = MagicMock()
             mock_client.return_value = mock_elbv2
             mock_elbv2.describe_load_balancers.return_value = DESCRIBE_LOAD_BALANCERS_EMPTY
@@ -209,7 +216,8 @@ class TestFetchALB:
 
 class TestFetchASG:
     def test_fetch_returns_asg_data(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_asg = MagicMock()
             mock_client.return_value = mock_asg
             mock_asg.describe_auto_scaling_groups.return_value = DESCRIBE_AUTO_SCALING_GROUPS_RESPONSE
@@ -219,7 +227,8 @@ class TestFetchASG:
             assert result["MinSize"] == 2
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_asg = MagicMock()
             mock_client.return_value = mock_asg
             mock_asg.describe_auto_scaling_groups.return_value = DESCRIBE_AUTO_SCALING_GROUPS_EMPTY
@@ -230,7 +239,8 @@ class TestFetchASG:
 
 class TestFetchSDNamespace:
     def test_fetch_returns_namespace(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_sd = MagicMock()
             mock_client.return_value = mock_sd
             mock_sd.list_namespaces.return_value = LIST_NAMESPACES_RESPONSE
@@ -240,7 +250,8 @@ class TestFetchSDNamespace:
             assert result["Id"] == "ns-abc123"
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_sd = MagicMock()
             mock_client.return_value = mock_sd
             mock_sd.list_namespaces.return_value = LIST_NAMESPACES_EMPTY
@@ -251,7 +262,8 @@ class TestFetchSDNamespace:
 
 class TestFetchCertificate:
     def test_fetch_by_domain_name(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_acm = MagicMock()
             mock_client.return_value = mock_acm
             mock_acm.list_certificates.return_value = LIST_CERTIFICATES_RESPONSE
@@ -261,7 +273,8 @@ class TestFetchCertificate:
             assert result["DomainName"] == "api.example.com"
 
     def test_fetch_by_arn(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_acm = MagicMock()
             mock_client.return_value = mock_acm
             mock_acm.describe_certificate.return_value = DESCRIBE_CERTIFICATE_RESPONSE
@@ -273,7 +286,8 @@ class TestFetchCertificate:
             assert result["DomainName"] == "api.example.com"
 
     def test_fetch_raises_when_not_found(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_acm = MagicMock()
             mock_client.return_value = mock_acm
             mock_acm.list_certificates.return_value = LIST_CERTIFICATES_EMPTY
@@ -284,7 +298,8 @@ class TestFetchCertificate:
 
 class TestFetchIAMRole:
     def test_fetch_returns_enriched_role(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_iam = MagicMock()
             mock_client.return_value = mock_iam
             mock_iam.get_role.return_value = GET_ROLE_RESPONSE
@@ -303,7 +318,8 @@ class TestFetchIAMRole:
 
 class TestFetchResourceDispatch:
     def test_dispatches_service_with_cluster(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_services.return_value = DESCRIBE_SERVICES_RESPONSE
@@ -317,7 +333,8 @@ class TestFetchResourceDispatch:
             assert "clusterArn" not in resource.spec
 
     def test_dispatches_taskdefinition(self):
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_task_definition.return_value = DESCRIBE_TASK_DEFINITION_RESPONSE
@@ -331,7 +348,8 @@ class TestFetchResourceDispatch:
 
     def test_kind_normalization(self):
         """Test that dashes, underscores, and case are normalized."""
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.Session") as mock_session_cls:
+            mock_client = mock_session_cls.return_value.client
             mock_ecs = MagicMock()
             mock_client.return_value = mock_ecs
             mock_ecs.describe_task_definition.return_value = DESCRIBE_TASK_DEFINITION_RESPONSE

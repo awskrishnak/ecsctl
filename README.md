@@ -1,22 +1,25 @@
 # ecsctl
 
-A command-line interface for AWS ECS that behaves like `kubectl`. Manage Task Definitions, Services, Load Balancers, Auto Scaling Groups, IAM Roles, ACM Certificates, and Service Discovery resources using declarative YAML manifests.
+A kubectl-style CLI for managing AWS ECS clusters entirely from the command line. Manage services, task definitions, load balancers, auto scaling groups, ECR repositories, secrets, SSM parameters, certificates, IAM roles, and more using declarative YAML manifests.
 
 ## Why ecsctl
 
-AWS ECS lacks a native CLI that treats infrastructure as declarative configuration. `ecsctl` closes that gap by providing:
+AWS ECS lacks a native CLI that treats infrastructure as declarative configuration. `ecsctl` closes that gap:
 
-- **Declarative manifests**: Define your entire ECS stack in YAML and apply it idempotently.
-- **Dry-run support**: Preview every AWS API call before execution.
-- **Live editing**: Fetch a resource, edit it in your `$EDITOR`, review a diff, and apply.
-- **Multi-resource orchestration**: Manage ECS, ELB, Auto Scaling, IAM, ACM, and Cloud Map from one tool.
-- **Context switching**: Seamlessly operate across dev, staging, and production clusters.
+- **Declarative manifests** — Define your ECS stack in YAML and apply idempotently
+- **Dry-run support** — Preview every AWS API call before execution
+- **Live editing** — Fetch a resource, edit in `$EDITOR`, review diff, apply
+- **Debugging** — Stream logs, exec into containers, view events, monitor utilization
+- **Deployment ops** — Deploy images, rollback, restart, wait for stability
+- **Context switching** — Operate across dev, staging, production clusters seamlessly
+- **Short aliases** — `svc`, `td`, `asg`, `lb`, `ecr`, `cert`, `role`, etc.
 
 ## Requirements
 
 - Python 3.8+
-- AWS CLI configured with credentials
-- IAM permissions for: `ECS`, `EC2`, `ElasticLoadBalancing`, `AutoScaling`, `IAM`, `ACM`, `ServiceDiscovery`
+- AWS CLI configured with credentials (SSO or static keys)
+- IAM permissions for: `ECS`, `EC2`, `ELBv2`, `AutoScaling`, `IAM`, `ACM`, `ServiceDiscovery`, `ECR`, `SecretsManager`, `SSM`, `CloudWatch Logs`
+- `session-manager-plugin` (for `exec` command only)
 
 ## Installation
 
@@ -26,165 +29,225 @@ cd ecsctl
 pip install -e .
 ```
 
+Verify:
+```bash
+ecsctl --version
+# ecsctl, version 2.1.0
+```
+
 ## Quick Start
 
 ### 1. Configure a context
 
 ```bash
-ecsctl config set prod   --cluster-name production   --aws-profile default   --aws-region us-east-1
-
+ecsctl config set prod --cluster-name production --aws-profile myprofile --aws-region us-east-1
 ecsctl config context prod
 ```
 
-### 2. Apply a manifest
+### 2. List resources
 
 ```bash
-ecsctl apply -f examples/service.yaml --dry-run
-ecsctl apply -f examples/service.yaml
+ecsctl get svc
+ecsctl get td
+ecsctl get asg
+ecsctl get ecr
 ```
 
-### 3. Inspect resources
+### 3. Inspect a resource
 
 ```bash
-ecsctl get services
 ecsctl describe service my-api -o yaml
 ```
 
-## Configuration
-
-Contexts are stored in `~/.ecsctl/config.json`. You can define multiple clusters and switch between them.
+### 4. Deploy a new image
 
 ```bash
-ecsctl config set dev  --cluster-name dev  --aws-region us-east-1
-ecsctl config set prod --cluster-name prod --aws-region us-east-1
-
-ecsctl config context prod
-ecsctl config show --show-all
+ecsctl deploy my-api --image myrepo/myapp:v2.0 --wait
 ```
 
-Environment variables override the active context:
+### 5. Apply a manifest
+
+```bash
+ecsctl apply -f service.yaml --dry-run
+ecsctl apply -f service.yaml
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `get` | List resources or get a specific resource by name |
+| `describe` | Show detailed info for a named resource |
+| `apply` | Create or update resources from YAML manifests |
+| `delete` | Delete resources defined in YAML manifests |
+| `edit` | Edit a live resource in $EDITOR, preview diff, apply |
+| `diff` | Show differences between local YAML and live resource |
+| `deploy` | Deploy a new image to a service |
+| `rollback` | Roll back to a previous task definition revision |
+| `restart` | Rolling restart (keeps current task definition) |
+| `scale` | Scale a service to a desired task count |
+| `run` | Run a one-off Fargate task from an image |
+| `logs` | View/stream logs for a service or task |
+| `exec` | Execute a command in a running container |
+| `events` | Show service deployment events |
+| `top` | Show CPU/memory utilization |
+| `wait` | Wait for a resource to reach a condition |
+| `config` | Manage configuration contexts |
+
+## Resource Types
+
+| Kind | Alias | AWS Service |
+|------|-------|-------------|
+| `service` | `svc` | ECS |
+| `task` | — | ECS |
+| `taskdefinition` | `td` | ECS |
+| `cluster` | — | ECS |
+| `capacityprovider` | `cp` | ECS |
+| `loadbalancer` | `lb`, `alb` | ELBv2 |
+| `targetgroup` | `tg` | ELBv2 |
+| `autoscalinggroup` | `asg` | Auto Scaling |
+| `ecrrepository` | `ecr`, `repo` | ECR |
+| `secret` | `sec` | Secrets Manager |
+| `ssmparameter` | `ssm`, `param` | Systems Manager |
+| `certificate` | `cert` | ACM |
+| `iamrole` | `role` | IAM |
+| `servicediscoverynamespace` | `ns` | Cloud Map |
+| `servicediscoveryservice` | `sdsvc` | Cloud Map |
+
+Plurals also work: `ecsctl get services`, `ecsctl get ecrrepositories`, etc.
+
+## Configuration
+
+Contexts stored in `~/.ecsctl/config.json`:
+
+```bash
+ecsctl config set dev  --cluster-name dev-cluster --aws-region us-east-1
+ecsctl config set prod --cluster-name prod-cluster --aws-profile production --aws-region us-east-1
+
+ecsctl config context prod    # switch active context
+ecsctl config show --show-all # view all contexts
+```
+
+Environment variables override active context:
 
 | Variable | Purpose |
 |----------|---------|
 | `AWS_ECS_CLUSTER_NAME` | Default cluster |
 | `AWS_PROFILE` | AWS CLI profile |
 | `AWS_DEFAULT_REGION` | AWS region |
-| `EDITOR` | Editor for the `edit` command |
+| `EDITOR` | Editor for `edit` command |
 
-## Usage
+## Usage Examples
 
-### apply
-
-Create or update resources from YAML manifests.
+### Listing and Inspecting
 
 ```bash
-ecsctl apply -f task-definition.yaml
-ecsctl apply -f task-definition.yaml -f service.yaml
-ecsctl apply -f infra/ --dry-run
+ecsctl get svc                          # list services (table)
+ecsctl get td -o json                   # list task definitions (JSON)
+ecsctl describe service my-api -o yaml  # full YAML spec
+ecsctl get svc -w                       # watch mode (poll every 2s)
 ```
 
-### get / describe
-
-List and inspect resources. Output formats: `table` (default), `json`, `yaml`.
+### Deploying and Managing
 
 ```bash
-ecsctl get services
-ecsctl get service my-api -o yaml
-ecsctl describe service my-api -o yaml
-ecsctl get loadbalancers
-ecsctl get autoscalinggroups
-ecsctl get certificates
-ecsctl get iamroles
+ecsctl deploy my-api --image repo:v2.0 --wait   # deploy new image, wait for stable
+ecsctl rollback my-api                           # revert to previous task def revision
+ecsctl rollback my-api --revision 3              # revert to specific revision
+ecsctl restart my-api                            # force rolling restart
+ecsctl scale my-api 5                            # scale to 5 tasks
 ```
 
-### edit
-
-Fetch a live resource, open it in `$EDITOR`, review the diff, and apply.
+### Debugging
 
 ```bash
-ecsctl edit service my-api
-ecsctl edit loadbalancer api-alb
-ecsctl edit iamrole ecsTaskRole --dry-run
+ecsctl logs my-api --follow --tail 100           # stream logs
+ecsctl logs my-api --since 5m --timestamps       # recent logs with timestamps
+ecsctl exec my-api --command /bin/sh             # shell into container
+ecsctl events service my-api --watch             # watch deployment events
+ecsctl top service                               # CPU/memory for all services
+ecsctl top service my-api                        # CPU/memory for one service
 ```
 
-### delete
-
-Remove resources defined in YAML files.
+### Manifests
 
 ```bash
-ecsctl delete -f service.yaml --dry-run
-ecsctl delete -f service.yaml
+ecsctl apply -f service.yaml --dry-run           # preview changes
+ecsctl apply -f td.yaml -f service.yaml          # apply multiple files
+ecsctl diff -f service.yaml                      # show drift from live
+ecsctl delete -f service.yaml --dry-run          # preview deletion
 ```
 
-### scale
+### Waiting
 
 ```bash
-ecsctl scale my-api 5 --dry-run
-ecsctl scale my-api 5
+ecsctl wait service my-api --for stable --timeout 300
+ecsctl wait task abc123def --for stopped
 ```
 
-### run
-
-Run a one-off Fargate task.
+### Editing Live Resources
 
 ```bash
-ecsctl run --image nginx:latest --name one-off-task --cluster production --dry-run
-ecsctl run --image nginx:latest --name one-off-task --cluster production
+ecsctl edit service my-api              # opens in $EDITOR, shows diff, confirms
+ecsctl edit taskdefinition my-app:5     # edit task def (registers new revision)
 ```
-
-## Supported Resources
-
-| Kind | AWS Service | Notes |
-|------|-------------|-------|
-| `TaskDefinition` | ECS | Immutable; apply registers a new revision |
-| `Service` | ECS | Auto-detects create vs. update |
-| `Cluster` | ECS | Create or update settings |
-| `Task` | ECS | One-off execution |
-| `LoadBalancer` | ELBv2 | ALB / NLB |
-| `AutoScalingGroup` | Auto Scaling | EC2 capacity management |
-| `ServiceDiscoveryNamespace` | Cloud Map | Private / Public DNS |
-| `ServiceDiscoveryService` | Cloud Map | Service registry |
-| `Certificate` | ACM | Request or import SSL certs |
-| `IAMRole` | IAM | Syncs managed and inline policies |
 
 ## Architecture
 
 ```
 User / CI
-    │
-    ▼
-┌─────────────┐
-│   ecsctl    │  CLI (Click) + YAML Parser + Diff Engine
-│    CLI      │
-└──────┬──────┘
-       │
-       ▼
-┌──────────────┐
-│ AWS Executor │  Dry-run logger + boto3 multi-service client
-│  (boto3)     │
-└──────┬───────┘
-       │
-   ┌───┴───┬────────┬────────┬────────┐
-   ▼       ▼        ▼        ▼        ▼
-  ECS    ELBv2   AutoScaling  IAM     ACM
-                              │
-                         Cloud Map
+    |
+    v
++-------------+
+|   ecsctl    |  CLI (Click) + YAML + Diff + Streaming
+|    CLI      |
++------+------+
+       |
+       v
++--------------+
+| AWS Executor |  Lazy client init + dry-run logger
+|  (boto3)     |
++------+-------+
+       |
+   +---+---+--------+--------+--------+--------+--------+
+   v       v        v        v        v        v        v
+  ECS    ELBv2   AutoScaling IAM     ACM      ECR    CloudWatch
+                                              |        Logs
+                                         Cloud Map
+                                         Secrets Mgr
+                                         SSM
 ```
 
 ### Module Layout
 
 ```
 ecsctl/
-├── __init__.py          # Version
-├── cli.py               # Click commands: apply, get, describe, edit, delete, scale, run, config
+├── __init__.py          # Version (2.1.0)
+├── cli.py               # Click commands registration + shared options
+├── types.py             # Resource type normalization + aliases
 ├── config.py            # Multi-context config manager (~/.ecsctl/config.json)
-├── executor.py          # boto3 wrapper with dry-run logging
-├── applier.py           # Per-kind create-or-update handlers
+├── executor.py          # Lazy boto3 client wrapper with dry-run logging
+├── applier.py           # Per-kind create-or-update handlers (14 types)
 ├── fetcher.py           # Read live AWS state, strip read-only fields
-├── editor.py            # Fetch → $EDITOR → diff → confirm → apply
+├── lister.py            # Registry-based resource listing (14 types)
+├── editor.py            # Fetch -> $EDITOR -> diff -> confirm -> apply
+├── diff.py              # Shared diff calculation and colored output
 ├── output.py            # Table / JSON / YAML formatter
-└── resources/
-    └── base.py          # ECSResource + Metadata dataclasses
+├── watcher.py           # Watch-mode polling loop
+├── streaming.py         # CloudWatch Logs streaming generator
+├── resources/
+│   └── base.py          # ECSResource + Metadata dataclasses
+└── commands/
+    ├── __init__.py
+    ├── logs.py           # Log viewing and streaming
+    ├── exec.py           # Container exec via SSM
+    ├── events.py         # Service event viewer
+    ├── top.py            # CPU/memory utilization
+    ├── rollback.py       # Task definition rollback
+    ├── restart.py        # Force new deployment
+    ├── deploy.py         # Image deployment workflow
+    ├── wait.py           # Boto3 waiter wrappers
+    └── diff.py           # Local vs live diff
 ```
 
 ## Examples
@@ -201,45 +264,36 @@ See [`examples/`](examples/) for complete YAML manifests:
 
 ## Design Decisions
 
-- **Task Definitions are immutable.** `apply` always registers a new revision. Services referencing the task definition are updated automatically when applied via a Service manifest.
-- **ALBs are mostly immutable.** `apply` creates the load balancer if it does not exist. Listener and target group changes are handled separately.
-- **IAM Roles support policy synchronization.** `apply` diffs managed policy attachments and inline policies, adding or removing them as needed.
-- **Certificates cannot be edited.** `apply` requests a new certificate only if one for the domain does not already exist.
+- **Task Definitions are immutable.** `apply` always registers a new revision.
+- **Lazy client initialization.** boto3 clients created on first use, not at startup.
+- **Session from context.** AWS profile/region resolved from active ecsctl context automatically.
+- **ALBs are mostly immutable.** `apply` creates if missing; listener changes handled separately.
+- **IAM Roles support policy sync.** Diffs managed policy attachments and inline policies.
+- **Certificates cannot be edited.** `apply` requests new only if domain doesn't have one.
 
 ## Troubleshooting
 
 | Issue | Resolution |
 |-------|------------|
-| `Cluster not found` | Verify `AWS_ECS_CLUSTER_NAME` or `--cluster` is set correctly |
-| `Task definition not found` | Ensure the task definition family name matches exactly |
-| `Access denied` | Confirm IAM user/role has the required service permissions |
-| `Dry-run shows no output` | Check that the manifest `kind` is supported and the file path is correct |
-| `Edit shows no changes` | The fetched spec may contain read-only fields that were stripped; only mutable fields trigger a diff |
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/description`)
-3. Commit your changes (`git commit -m "feat: description"`)
-4. Push to the branch (`git push origin feature/description`)
-5. Open a Pull Request
-
-Please include tests for new resource kinds or apply logic.
+| `Cluster required` | Set via `--cluster`, context, or `AWS_ECS_CLUSTER_NAME` |
+| `No tasks found` | Service has 0 running tasks (check ASG capacity) |
+| `session-manager-plugin not found` | Install AWS Session Manager Plugin for `exec` |
+| `Access denied` | Confirm IAM permissions for the target service |
+| `Unknown resource type` | Check `ecsctl --help` for supported types and aliases |
+| `Dry-run shows no output` | Verify manifest `kind` is supported and file exists |
 
 ## Testing
 
-The project has a comprehensive test suite with **169 tests** achieving **94% code coverage**.
-
-### Running Tests
+**169 tests, 94% coverage.**
 
 ```bash
 # Run all tests
 pytest tests/ -v
 
-# Run with coverage report
+# With coverage
 pytest tests/ --cov=ecsctl --cov-report=term-missing
 
-# Run a specific test file
+# Single file
 pytest tests/test_cli_subcommands.py -v
 ```
 
@@ -253,40 +307,30 @@ pip install pytest pytest-mock pytest-cov moto
 
 ```
 tests/
-├── conftest.py                  # Shared fixtures (mock clients, sample YAML files)
+├── conftest.py                  # Shared fixtures (mock clients, sample YAML)
 ├── fixtures/
-│   └── aws_responses.py         # AWS CLI skeleton-based response fixtures
-├── test_resources_base.py       # ECSResource model parsing & serialization (16 tests)
-├── test_config.py               # ConfigManager context management (12 tests)
-├── test_executor.py             # AWSExecutor dry-run & call routing (8 tests)
-├── test_applier.py              # All 9 apply handlers create/update logic (30 tests)
-├── test_fetcher.py              # All 9 fetch functions & readonly stripping (25 tests)
+│   └── aws_responses.py         # AWS skeleton-based response fixtures
+├── test_resources_base.py       # ECSResource model (16 tests)
+├── test_config.py               # ConfigManager (12 tests)
+├── test_executor.py             # AWSExecutor dry-run & lazy init (8 tests)
+├── test_applier.py              # All apply handlers (30 tests)
+├── test_fetcher.py              # All fetch functions & stripping (25 tests)
 ├── test_editor.py               # Diff calculation (5 tests)
-├── test_output.py               # Table/JSON/YAML formatting (12 tests)
-├── test_cli.py                  # Basic CLI integration (14 tests)
+├── test_output.py               # Formatting (12 tests)
+├── test_cli.py                  # CLI integration (14 tests)
 └── test_cli_subcommands.py      # Full subcommand validation (47 tests)
 ```
 
-### What's Tested
+## Contributing
 
-Every CLI subcommand is validated end-to-end with mocked boto3 calls:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/description`)
+3. Commit your changes (`git commit -m "feat: description"`)
+4. Push to the branch (`git push origin feature/description`)
+5. Open a Pull Request
 
-| Subcommand | Validated |
-|------------|-----------|
-| `apply` | All 10 resource kinds (create + update paths), dry-run, cluster-required error |
-| `get` | All 9 resource type listings, single resource fetch, JSON/YAML/table output, empty lists |
-| `describe` | YAML/JSON/table output, not-found error |
-| `delete` | All resource kinds, dry-run |
-| `scale` | Execute, dry-run, invalid input |
-| `run` | Execute (register + run_task), dry-run |
-| `edit` | No-changes, abort, apply with dry-run |
-| `config set` | Full params, persistence verification |
-| `config context` | Switch, nonexistent error |
-| `config show` | Current context, show-all |
-
-All AWS API call shapes are validated against `aws <service> <action> --generate-cli-skeleton` output to ensure parameter names, types, and structures match the real AWS APIs.
+Please include tests for new resource kinds or apply logic.
 
 ## License
 
 MIT
-

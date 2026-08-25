@@ -294,7 +294,7 @@ class TestGetAllResourceTypes:
         with patch("boto3.client", side_effect=lambda svc, **kw: mock_boto3_clients.get(svc, MagicMock())):
             result = runner.invoke(cli, ["get", "nonexistent"])
         assert result.exit_code == 0
-        assert "not yet implemented" in result.output.lower() or "Listing not yet implemented" in result.output
+        assert "unknown resource type" in result.output.lower()
 
     def test_get_service_empty_list(self, runner, mock_boto3_clients):
         mock_boto3_clients["ecs"].list_services.return_value = {"serviceArns": []}
@@ -338,7 +338,9 @@ class TestDescribeCommand:
         assert result.exit_code == 0
         assert "desiredCount: 3" in result.output
         assert "taskDefinition: app:2" in result.output
-        mock_fetch.assert_called_once_with("service", "my-svc", "production")
+        mock_fetch.assert_called_once()
+        args = mock_fetch.call_args
+        assert args[0] == ("service", "my-svc", "production") or args[0][:3] == ("service", "my-svc", "production")
 
 
     def test_describe_service_json(self, runner, mock_boto3_clients):

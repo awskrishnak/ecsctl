@@ -6,14 +6,11 @@ from ecsctl.executor import AWSExecutor
 
 
 class TestAWSExecutor:
-    def test_init_creates_clients(self, mock_boto3_clients):
+    def test_init_lazy_clients(self, mock_boto3_clients):
         executor = AWSExecutor(dry_run=False)
+        assert executor.clients == {}
+        executor.client("ecs")
         assert "ecs" in executor.clients
-        assert "elbv2" in executor.clients
-        assert "autoscaling" in executor.clients
-        assert "iam" in executor.clients
-        assert "acm" in executor.clients
-        assert "servicediscovery" in executor.clients
 
     def test_init_dry_run_flag(self, mock_boto3_clients):
         executor = AWSExecutor(dry_run=True)

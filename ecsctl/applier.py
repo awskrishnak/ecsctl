@@ -20,7 +20,7 @@ def apply_task_definition(spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_service(name: str, spec: dict, executor: AWSExecutor, cluster: str) -> Any:
-    ecs = executor.clients["ecs"]
+    ecs = executor.client("ecs")
     try:
         resp = ecs.describe_services(cluster=cluster, services=[name])
         if resp["services"] and resp["services"][0]["status"] != "INACTIVE":
@@ -42,7 +42,7 @@ def apply_service(name: str, spec: dict, executor: AWSExecutor, cluster: str) ->
 
 
 def apply_cluster(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    ecs = executor.clients["ecs"]
+    ecs = executor.client("ecs")
     try:
         ecs.describe_clusters(clusters=[name])
         if "settings" in spec:
@@ -57,7 +57,7 @@ def apply_cluster(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_asg(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    autoscaling = executor.clients["autoscaling"]
+    autoscaling = executor.client("autoscaling")
     try:
         resp = autoscaling.describe_auto_scaling_groups(AutoScalingGroupNames=[name])
         if resp.get("AutoScalingGroups"):
@@ -76,7 +76,7 @@ def apply_asg(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_alb(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    elbv2 = executor.clients["elbv2"]
+    elbv2 = executor.client("elbv2")
     try:
         resp = elbv2.describe_load_balancers(Names=[name])
         if resp.get("LoadBalancers"):
@@ -95,7 +95,7 @@ def apply_alb(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_sd_namespace(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    sd = executor.clients["servicediscovery"]
+    sd = executor.client("servicediscovery")
     try:
         resp = sd.list_namespaces()
         for ns in resp.get("Namespaces", []):
@@ -117,7 +117,7 @@ def apply_sd_namespace(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_sd_service(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    sd = executor.clients["servicediscovery"]
+    sd = executor.client("servicediscovery")
     try:
         resp = sd.list_services()
         for svc in resp.get("Services", []):
@@ -132,7 +132,7 @@ def apply_sd_service(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_certificate(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    acm = executor.clients["acm"]
+    acm = executor.client("acm")
     certs = acm.list_certificates().get("CertificateSummaryList", [])
     for c in certs:
         if c.get("DomainName") == spec.get("domainName"):
@@ -146,7 +146,7 @@ def apply_certificate(name: str, spec: dict, executor: AWSExecutor) -> Any:
 
 
 def apply_iam_role(name: str, spec: dict, executor: AWSExecutor) -> Any:
-    iam = executor.clients["iam"]
+    iam = executor.client("iam")
     assume_doc = spec.get("assumeRolePolicyDocument")
     if isinstance(assume_doc, dict):
         assume_doc = json.dumps(assume_doc)
@@ -200,6 +200,118 @@ def apply_iam_role(name: str, spec: dict, executor: AWSExecutor) -> Any:
         return {"message": f"IAM Role {name} created"}
 
 
+def apply_target_group(name: str, spec: dict, executor: AWSExecutor) -> Any:
+    elbv2 = executor.client("elbv2")
+    try:
+        resp = elbv2.describe_target_groups(Names=[name])
+        if resp.get("TargetGroups"):
+            tg_arn = resp["TargetGroups"][0]["TargetGroupArn"]
+            modify_params = {"TargetGroupArn": tg_arn}
+            for k in ["HealthCheckProtocol", "HealthCheckPort", "HealthCheckPath",
+                      "HealthCheckIntervalSeconds", "HealthCheckTimeoutSeconds",
+                      "HealthyThresholdCount", "UnhealthyThresholdCount"]:
+                if k in spec:
+                    modify_params[k] = spec[k]
+            return executor.call("elbv2", "modify_target_group", modify_params)
+    except Exception:
+        pass
+    create_params = {
+        "Name": name,
+        "Protocol": spec.get("Protocol", "HTTP"),
+        "Port": spec.get("Port", 80),
+        "VpcId": spec["VpcId"],
+        "TargetType": spec.get("TargetType", "ip"),
+    }
+    for k in ["HealthCheckProtocol", "HealthCheckPath", "HealthCheckPort",
+              "HealthCheckIntervalSeconds", "HealthCheckTimeoutSeconds",
+              "HealthyThresholdCount", "UnhealthyThresholdCount"]:
+        if k in spec:
+            create_params[k] = spec[k]
+    return executor.call("elbv2", "create_target_group", create_params)
+
+
+def apply_ecr_repository(name: str, spec: dict, executor: AWSExecutor) -> Any:
+    ecr = executor.client("ecr")
+    try:
+        ecr.describe_repositories(repositoryNames=[name])
+        if "imageTagMutability" in spec:
+            executor.call("ecr", "put_image_tag_mutability", {
+                "repositoryName": name,
+                "imageTagMutability": spec["imageTagMutability"],
+            })
+        if "imageScanningConfiguration" in spec:
+            executor.call("ecr", "put_image_scanning_configuration", {
+                "repositoryName": name,
+                "imageScanningConfiguration": spec["imageScanningConfiguration"],
+            })
+        return {"message": f"ECR Repository {name} updated"}
+    except ecr.exceptions.RepositoryNotFoundException:
+        pass
+    create_params = {"repositoryName": name}
+    if "imageTagMutability" in spec:
+        create_params["imageTagMutability"] = spec["imageTagMutability"]
+    if "imageScanningConfiguration" in spec:
+        create_params["imageScanningConfiguration"] = spec["imageScanningConfiguration"]
+    if "encryptionConfiguration" in spec:
+        create_params["encryptionConfiguration"] = spec["encryptionConfiguration"]
+    return executor.call("ecr", "create_repository", create_params)
+
+
+def apply_secret(name: str, spec: dict, executor: AWSExecutor) -> Any:
+    sm = executor.client("secretsmanager")
+    try:
+        sm.describe_secret(SecretId=name)
+        update_params = {"SecretId": name}
+        if "SecretString" in spec:
+            update_params["SecretString"] = spec["SecretString"]
+        if "Description" in spec:
+            update_params["Description"] = spec["Description"]
+        return executor.call("secretsmanager", "update_secret", update_params)
+    except sm.exceptions.ResourceNotFoundException:
+        pass
+    create_params = {"Name": name}
+    if "SecretString" in spec:
+        create_params["SecretString"] = spec["SecretString"]
+    if "Description" in spec:
+        create_params["Description"] = spec["Description"]
+    if "Tags" in spec:
+        create_params["Tags"] = _convert_tags(spec["Tags"])
+    return executor.call("secretsmanager", "create_secret", create_params)
+
+
+def apply_ssm_parameter(name: str, spec: dict, executor: AWSExecutor) -> Any:
+    params = {
+        "Name": name,
+        "Value": spec["Value"],
+        "Type": spec.get("Type", "String"),
+        "Overwrite": True,
+    }
+    if "Description" in spec:
+        params["Description"] = spec["Description"]
+    if "Tier" in spec:
+        params["Tier"] = spec["Tier"]
+    return executor.call("ssm", "put_parameter", params)
+
+
+def apply_capacity_provider(name: str, spec: dict, executor: AWSExecutor) -> Any:
+    ecs = executor.client("ecs")
+    try:
+        resp = ecs.describe_capacity_providers(capacityProviders=[name])
+        providers = resp.get("capacityProviders", [])
+        if providers and providers[0].get("status") == "ACTIVE":
+            update_params = {"name": name}
+            if "autoScalingGroupProvider" in spec:
+                update_params["autoScalingGroupProvider"] = {
+                    k: v for k, v in spec["autoScalingGroupProvider"].items()
+                    if k in ("managedScaling", "managedTerminationProtection")
+                }
+            return executor.call("ecs", "update_capacity_provider", update_params)
+    except Exception:
+        pass
+    create_params = {"name": name, **spec}
+    return executor.call("ecs", "create_capacity_provider", create_params)
+
+
 HANDLERS = {
     "taskdefinition": lambda r, e, c: apply_task_definition(r.spec, e),
     "service": lambda r, e, c: apply_service(r.metadata.name, r.spec, e, c),
@@ -210,6 +322,11 @@ HANDLERS = {
     "servicediscoveryservice": lambda r, e, c: apply_sd_service(r.metadata.name, r.spec, e),
     "certificate": lambda r, e, c: apply_certificate(r.metadata.name, r.spec, e),
     "iamrole": lambda r, e, c: apply_iam_role(r.metadata.name, r.spec, e),
+    "targetgroup": lambda r, e, c: apply_target_group(r.metadata.name, r.spec, e),
+    "ecrrepository": lambda r, e, c: apply_ecr_repository(r.metadata.name, r.spec, e),
+    "secret": lambda r, e, c: apply_secret(r.metadata.name, r.spec, e),
+    "ssmparameter": lambda r, e, c: apply_ssm_parameter(r.metadata.name, r.spec, e),
+    "capacityprovider": lambda r, e, c: apply_capacity_provider(r.metadata.name, r.spec, e),
 }
 
 

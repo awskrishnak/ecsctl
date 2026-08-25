@@ -206,4 +206,6 @@ def mock_boto3_clients():
         return clients.get(service, MagicMock())
 
     with patch("boto3.client", side_effect=fake_client):
-        yield clients
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.client.side_effect = fake_client
+            yield clients

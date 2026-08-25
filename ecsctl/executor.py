@@ -7,20 +7,23 @@ import click
 class AWSExecutor:
     """AWS API executor with dry-run support."""
 
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, dry_run: bool = False, session=None):
         self.dry_run = dry_run
-        self.clients = {
-            "ecs": boto3.client("ecs"),
-            "autoscaling": boto3.client("autoscaling"),
-            "elbv2": boto3.client("elbv2"),
-            "servicediscovery": boto3.client("servicediscovery"),
-            "acm": boto3.client("acm"),
-            "iam": boto3.client("iam"),
-        }
+        self._session = session or boto3.Session()
+        self._clients = {}
         self.logs = []
 
+    @property
+    def clients(self):
+        return self._clients
+
+    def client(self, service: str):
+        if service not in self._clients:
+            self._clients[service] = self._session.client(service)
+        return self._clients[service]
+
     def call(self, service: str, action: str, params: Dict[str, Any]) -> Any:
-        client = self.clients[service]
+        client = self.client(service)
         method = getattr(client, action)
         if self.dry_run:
             log_entry = {
